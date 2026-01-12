@@ -19,6 +19,7 @@ export const ConstructorView: React.FC = () => {
   const [realResults, setRealResults] = useState<any[]>([]);
   const [selectedStore, setSelectedStore] = useState<any | null>(null);
   const [locationError, setLocationError] = useState(false);
+  const [limitError, setLimitError] = useState(false);
 
   useEffect(() => {
     const fetchMasterData = async () => {
@@ -42,7 +43,6 @@ export const ConstructorView: React.FC = () => {
     };
     fetchMasterData();
 
-    // Tentar pegar localização
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -61,15 +61,21 @@ export const ConstructorView: React.FC = () => {
   }, []);
 
   const handleSearch = async () => {
+    // REGRA DE NEGÓCIO: Validar limite de 10 itens selecionados
+    if (selectedMaterials.length > 10) {
+      setLimitError(true);
+      setTimeout(() => setLimitError(false), 4000);
+      return;
+    }
+
     const coords = userCoords || DEFAULT_COORDS;
     setLoading(true);
     setHasSearched(true);
+    setLimitError(false);
     
     try {
-      const queryTerm = searchTerm;
-      const data = await getProducts(searchRadius, coords.lat, coords.lng, queryTerm);
-      
-      let finalData = data || [];
+      const data = await getProducts(searchRadius, coords.lat, coords.lng, searchTerm);
+      let finalData = (data || []).slice(0, 10);
       
       if (selectedMaterials.length > 0) {
         const selectedIds = selectedMaterials.map(m => Number(m.id));
@@ -95,12 +101,18 @@ export const ConstructorView: React.FC = () => {
     setSelectedMaterials(prev => {
       const isSelected = prev.find(m => m.id === mat.id);
       if (isSelected) return prev.filter(m => m.id !== mat.id);
+      // Impede seleção de mais de 10 na UI do modal
+      if (prev.length >= 10) {
+        setLimitError(true);
+        return prev;
+      }
       return [...prev, mat];
     });
   };
 
   const removeMaterial = (id: number) => {
     setSelectedMaterials(prev => prev.filter(m => m.id !== id));
+    setLimitError(false);
   };
 
   const matrixData = useMemo(() => {
@@ -169,6 +181,20 @@ export const ConstructorView: React.FC = () => {
         </div>
       )}
 
+      {limitError && (
+        <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex items-center justify-between gap-3 animate-in slide-in-from-top-4">
+          <div className="flex items-center gap-3">
+            <i className="fas fa-exclamation-triangle text-red-600"></i>
+            <p className="text-[10px] font-black text-red-800 uppercase tracking-widest">
+              Limite ultrapassado! Selecione no máximo 10 itens para cotar.
+            </p>
+          </div>
+          <button onClick={() => setLimitError(false)} className="text-red-400 hover:text-red-600">
+            <i className="fas fa-times"></i>
+          </button>
+        </div>
+      )}
+
       <div className="bg-white p-6 rounded-[2.5rem] shadow-xl shadow-orange-100/50 border border-orange-50 space-y-6">
         <div className="flex gap-2">
           <div className="flex-1 flex items-center gap-3 bg-gray-50 px-5 py-4 rounded-2xl border border-gray-100 focus-within:border-orange-500 transition-all shadow-inner">
@@ -191,7 +217,12 @@ export const ConstructorView: React.FC = () => {
         </div>
 
         <div className="space-y-3">
-          <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Categorias Rápidas</h4>
+          <div className="flex justify-between items-center px-1">
+            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Categorias Rápidas</h4>
+            <span className={`text-[9px] font-black uppercase tracking-widest ${selectedMaterials.length >= 10 ? 'text-red-500' : 'text-orange-400'}`}>
+              {selectedMaterials.length}/10 selecionados
+            </span>
+          </div>
           <div className="flex flex-wrap gap-2">
             {categories.map(cat => (
               <button 
@@ -217,7 +248,7 @@ export const ConstructorView: React.FC = () => {
               </div>
             ))}
             <button 
-              onClick={() => { setSelectedMaterials([]); setRealResults([]); setHasSearched(false); }}
+              onClick={() => { setSelectedMaterials([]); setRealResults([]); setHasSearched(false); setLimitError(false); }}
               className="text-[9px] font-black text-gray-400 uppercase hover:text-red-500 px-2"
             >
               Limpar Lista
@@ -247,7 +278,7 @@ export const ConstructorView: React.FC = () => {
             </div>
             <h3 className="text-lg font-bold text-gray-800 uppercase tracking-tighter">Pronto para cotar?</h3>
             <p className="text-gray-400 text-[10px] mt-2 uppercase font-black tracking-widest leading-relaxed">
-              Pesquise itens acima ou selecione por categoria <br/> para comparar preços em tempo real.
+              Selecione até 10 itens acima para comparar <br/> os melhores preços regionais.
             </p>
           </div>
         ) : loading ? (
@@ -261,7 +292,7 @@ export const ConstructorView: React.FC = () => {
               <thead>
                 <tr className="bg-gray-50/50">
                   <th className="p-6 border-b border-gray-100 sticky left-0 bg-white z-20 min-w-[240px]">
-                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Item</span>
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Item (Max 10)</span>
                   </th>
                   {matrixData.stores.map(store => (
                     <th 
