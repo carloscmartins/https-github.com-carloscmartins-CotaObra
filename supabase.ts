@@ -1,9 +1,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 
-const supabaseUrl = 'https://adistoiuqtegnnmsltlu.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkaXN0b2l1cXRlZ25ubXNsdGx1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5OTAzNjIsImV4cCI6MjA4MzU2NjM2Mn0.aeLAzOlJZqcnC5fIvuAvUmBPXMLKGOTUyuYgKLqGRfA';
-
+const supabaseUrl = '';
+const supabaseKey = 
 /**
  * Cliente Supabase configurado para o MVP.
  * Nota: A chave anon é segura para uso client-side com RLS ativo.
