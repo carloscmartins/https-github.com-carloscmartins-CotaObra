@@ -114,7 +114,8 @@ export const MerchantView: React.FC = () => {
         store_id: store.id,
         material_id: selectedMaterial.id,
         image_url: 'https://images.unsplash.com/photo-1581094794329-c8112a89af12?q=80&w=800&auto=format&fit=crop',
-        active: true
+        active: true,
+        metadata: { unit: selectedMaterial.unidade }
       };
 
       const { data, error } = await supabase.from('products').insert([productToInsert]).select();
@@ -219,7 +220,6 @@ export const MerchantView: React.FC = () => {
 
   return (
     <div className="p-4 space-y-6 max-w-2xl mx-auto pb-24">
-      {/* Header da Loja */}
       <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden">
         <div className="relative z-10 flex justify-between items-start">
           <div>
@@ -245,7 +245,6 @@ export const MerchantView: React.FC = () => {
         </div>
       </div>
 
-      {/* Grid de Itens */}
       <div className="space-y-4">
         <div className="flex justify-between items-center px-4">
           <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Meus Itens ({inventory.length})</h3>
@@ -255,42 +254,54 @@ export const MerchantView: React.FC = () => {
           <div className="text-center py-20"><i className="fas fa-circle-notch fa-spin text-orange-500 text-2xl"></i></div>
         ) : inventory.length > 0 ? (
           <div className="grid grid-cols-1 gap-3">
-            {inventory.map(item => (
-              <div key={item.id} className="bg-white p-4 rounded-2xl border border-gray-100 flex flex-col hover:border-orange-100 transition-all shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-gray-50 rounded-xl overflow-hidden border border-gray-50">
-                      <img src={item.imageUrl} className="w-full h-full object-cover" alt="" />
+            {inventory.map(item => {
+              // Tenta pegar a unidade do catálogo mestre ou metadados
+              const masterItem = masterCatalog.find(m => Number(m.id) === Number(item.material_id));
+              const unit = masterItem?.unidade || (item.metadata as any)?.unit || 'UN';
+              
+              return (
+                <div key={item.id} className="bg-white p-4 rounded-2xl border border-gray-100 flex flex-col hover:border-orange-100 transition-all shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gray-50 rounded-xl overflow-hidden border border-gray-50">
+                        <img src={item.imageUrl} className="w-full h-full object-cover" alt="" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-gray-800 text-xs leading-tight">{item.name}</h4>
+                        <div className="flex items-center gap-2 mt-1">
+                          <p className="text-[10px] font-black text-orange-500 uppercase">R$ {item.price?.toFixed(2).replace('.', ',')}</p>
+                          <span className="text-[8px] font-bold text-gray-300 uppercase">/ {unit}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-gray-800 text-xs leading-tight">{item.name}</h4>
-                      <p className="text-[9px] font-black text-orange-500 uppercase mt-1">R$ {item.price?.toFixed(2).replace('.', ',')}</p>
+                    
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => startEditing(item)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-300 hover:text-orange-500">
+                        <i className="fas fa-pencil-alt text-[10px]"></i>
+                      </button>
+                      <button onClick={() => handleDeleteProduct(item.id)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-200 hover:text-red-500">
+                        <i className="fas fa-trash-alt text-[10px]"></i>
+                      </button>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => startEditing(item)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-300 hover:text-orange-500">
-                      <i className="fas fa-pencil-alt text-[10px]"></i>
-                    </button>
-                    <button onClick={() => handleDeleteProduct(item.id)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-200 hover:text-red-500">
-                      <i className="fas fa-trash-alt text-[10px]"></i>
-                    </button>
-                  </div>
-                </div>
 
-                {editingId === item.id && (
-                  <div className="mt-3 pt-3 border-t border-gray-50 flex items-center gap-2">
-                    <input 
-                      type="number"
-                      className="flex-1 bg-gray-50 border border-orange-200 rounded-lg px-3 py-2 outline-none font-bold text-xs"
-                      value={editPrice}
-                      onChange={e => setEditPrice(e.target.value)}
-                    />
-                    <button onClick={() => handleUpdatePrice(item.id)} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[9px] font-black uppercase">OK</button>
-                  </div>
-                )}
-              </div>
-            ))}
+                  {editingId === item.id && (
+                    <div className="mt-3 pt-3 border-t border-gray-50 flex items-center gap-2">
+                      <div className="flex-1 relative">
+                        <input 
+                          type="number"
+                          className="w-full bg-gray-50 border border-orange-200 rounded-lg px-3 py-2 outline-none font-bold text-xs"
+                          value={editPrice}
+                          onChange={e => setEditPrice(e.target.value)}
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-gray-300 uppercase">{unit}</span>
+                      </div>
+                      <button onClick={() => handleUpdatePrice(item.id)} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[9px] font-black uppercase">OK</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-gray-50 p-8">
@@ -299,7 +310,6 @@ export const MerchantView: React.FC = () => {
         )}
       </div>
 
-      {/* Catalog Modal */}
       {showCatalog && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[60] flex items-end sm:items-center justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-[2rem] max-h-[85vh] overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom-5">
@@ -343,7 +353,10 @@ export const MerchantView: React.FC = () => {
                         selectedMaterial?.id === m.id ? 'border-orange-500 bg-orange-50' : 'border-gray-50 bg-white'
                       }`}
                     >
-                      <span className="font-bold text-gray-800 text-xs">{m.nome}</span>
+                      <div>
+                        <span className="font-bold text-gray-800 text-xs">{m.nome}</span>
+                        <p className="text-[8px] font-black text-orange-400 uppercase mt-0.5">Preço por {m.unidade}</p>
+                      </div>
                       <i className={`fas ${selectedMaterial?.id === m.id ? 'fa-check-circle text-orange-600' : 'fa-plus text-gray-200'}`}></i>
                     </button>
                   ))}
@@ -353,14 +366,20 @@ export const MerchantView: React.FC = () => {
 
             {selectedMaterial && (
               <div className="p-6 bg-gray-50 border-t border-gray-100">
+                <div className="flex flex-col gap-2 mb-3">
+                  <p className="text-[9px] font-black text-gray-400 uppercase">Preço de Venda ({selectedMaterial.unidade})</p>
+                </div>
                 <div className="flex items-center gap-3">
-                  <input 
-                    type="number" 
-                    className="flex-1 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-orange-600 font-black text-lg"
-                    placeholder="Preço R$"
-                    value={assocPrice}
-                    onChange={e => setAssocPrice(e.target.value)}
-                  />
+                  <div className="flex-1 relative">
+                    <input 
+                      type="number" 
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-orange-600 font-black text-lg"
+                      placeholder="0,00"
+                      value={assocPrice}
+                      onChange={e => setAssocPrice(e.target.value)}
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-300 uppercase">/ {selectedMaterial.unidade}</span>
+                  </div>
                   <button 
                     disabled={!assocPrice || isSaving}
                     onClick={handleAssociateMaterial}
