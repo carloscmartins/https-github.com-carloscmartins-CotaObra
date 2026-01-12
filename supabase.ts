@@ -1,33 +1,34 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 
-const supabaseUrl = '';
-const supabaseKey = 
+// Em ambientes de produção (Vercel/Netlify), estas variáveis são injetadas automaticamente.
+// Em desenvolvimento local, elas vêm do seu arquivo .env ou do ambiente de execução.
+const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://adistoiuqtegnnmsltlu.supabase.co';
+const supabaseKey = process.env.VITE_SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkaXN0b2l1cXRlZ25ubXNsdGx1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5OTAzNjIsImV4cCI6MjA4MzU2NjM2Mn0.aeLAzOlJZqcnC5fIvuAvUmBPXMLKGOTUyuYgKLqGRfA';
+
+if (!supabaseKey) {
+  console.warn("[CotaObra] Supabase Key não encontrada. Verifique as variáveis de ambiente.");
+}
+
 /**
- * Cliente Supabase configurado para o MVP.
- * Nota: A chave anon é segura para uso client-side com RLS ativo.
+ * Cliente Supabase configurado de forma segura.
+ * As permissões de acesso são controladas pelas Policies (RLS) no painel do Supabase.
  */
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true
-  },
-  global: {
-    headers: { 'x-application-name': 'cotaobra-mvp' }
   }
 });
 
 /**
- * Busca produtos otimizada para MVP com suporte a busca geográfica.
+ * Busca produtos com suporte a geolocalização.
  */
 export const getProducts = async (radiusKm: number, lat: number, lng: number, term?: string) => {
   const searchTerm = term && term.trim() !== '' ? term : '';
   
-  console.info(`[CotaObra] Buscando: "${searchTerm || 'Tudo'}" num raio de ${radiusKm}km`);
-
   try {
-    // Tenta usar a função RPC de busca por proximidade
     const { data, error } = await supabase.rpc('nearby_products', {
       user_lat: parseFloat(lat.toString()),
       user_lng: parseFloat(lng.toString()),
@@ -36,16 +37,11 @@ export const getProducts = async (radiusKm: number, lat: number, lng: number, te
     });
 
     if (!error && data) return data;
-    
-    if (error) {
-      console.warn("[CotaObra] RPC indisponível ou erro:", error.message);
-      // Se o erro for de função não encontrada, ele cairá no fallback abaixo automaticamente
-    }
   } catch (err) {
-    console.error("[CotaObra] Erro de conexão RPC:", err);
+    console.error("[CotaObra] Falha ao consultar RPC geográfica:", err);
   }
 
-  // FALLBACK: Busca simples caso a infraestrutura geográfica do DB ainda não esteja 100%
+  // Fallback para busca simples se o RPC falhar
   try {
     let query = supabase
       .from('products')
@@ -55,9 +51,7 @@ export const getProducts = async (radiusKm: number, lat: number, lng: number, te
       `)
       .eq('active', true);
 
-    if (searchTerm) {
-      query = query.ilike('name', `%${searchTerm}%`);
-    }
+    if (searchTerm) query = query.ilike('name', `%${searchTerm}%`);
 
     const { data, error } = await query.limit(50);
     if (error) throw error;
@@ -67,10 +61,9 @@ export const getProducts = async (radiusKm: number, lat: number, lng: number, te
       store_name: (p.stores as any)?.name || 'Loja Parceira',
       whatsapp: (p.stores as any)?.whatsapp,
       address: (p.stores as any)?.address,
-      distance_km: null // No fallback não temos o cálculo de distância
+      distance_km: null
     }));
-  } catch (fallbackError) {
-    console.error("[CotaObra] Falha crítica no banco de dados:", fallbackError);
+  } catch (err) {
     return [];
   }
 };
