@@ -8,13 +8,22 @@ const supabaseKey = process.env.VITE_SUPABASE_KEY || (window as any).VITE_SUPABA
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
-function parseLocation(loc: string): { lat: number; lng: number } | null {
-  if (!loc || typeof loc !== 'string') return null;
-  if (loc.includes('POINT')) {
+function parseLocation(loc: any): { lat: number; lng: number } | null {
+  if (!loc) return null;
+  
+  // Se já for um objeto com lat/lng (raro no retorno direto do PostGIS mas possível via RPC)
+  if (typeof loc === 'object' && loc.lat && loc.lng) {
+    return { lat: Number(loc.lat), lng: Number(loc.lng) };
+  }
+
+  const locStr = String(loc);
+
+  // Caso 1: WKT (Well-Known Text) - POINT(lng lat)
+  if (locStr.includes('POINT')) {
     try {
-      const matches = loc.match(/\(([^)]+)\)/);
+      const matches = locStr.match(/\(([^)]+)\)/);
       if (matches && matches[1]) {
-        const parts = matches[1].split(' ');
+        const parts = matches[1].trim().split(/\s+/);
         const lng = parseFloat(parts[0]);
         const lat = parseFloat(parts[1]);
         if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
@@ -23,18 +32,31 @@ function parseLocation(loc: string): { lat: number; lng: number } | null {
       console.warn("Falha ao ler WKT:", e);
     }
   }
-  if (loc.length > 40) { 
+
+  // Caso 2: Hex EWKB (Extendido Well-Known Binary) comum no Supabase/PostGIS
+  // Formato: 0101000020E6100000...
+  if (locStr.length >= 42) { 
     try {
+      // O PostGIS costuma enviar em Little Endian. 
+      // Coordenadas começam no offset 18 (após o header de SRID se existir) ou 10.
+      // Vamos tentar um método mais simples: extrair do final da string hex se for POINT
       const readDouble = (hexPart: string) => {
         const bytes = new Uint8Array(hexPart.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
         const view = new DataView(bytes.buffer);
         return view.getFloat64(0, true);
       };
-      const lng = readDouble(loc.substring(26, 42));
-      const lat = readDouble(loc.substring(42, 58));
-      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+      
+      // Para POINT (16 bytes para 2 doubles)
+      const lng = readDouble(locStr.slice(-32, -16));
+      const lat = readDouble(locStr.slice(-16));
+      
+      // Validação básica para evitar valores astronômicos caso o offset esteja errado
+      if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+        return { lat, lng };
+      }
     } catch (e) { }
   }
+  
   return null;
 }
 
@@ -43,8 +65,13 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
   const nLon1 = Number(lon1);
   const nLat2 = Number(lat2);
   const nLon2 = Number(lon2);
+  
   if (isNaN(nLat1) || isNaN(nLon1) || isNaN(nLat2) || isNaN(nLon2)) return null;
-  const R = 6371; 
+  
+  // Filtro de sanidade: se lat/lng forem 0 ou valores de erro comuns
+  if (nLat1 === 0 || nLat2 === 0) return null;
+
+  const R = 6371; // Raio da Terra em KM
   const dLat = (nLat2 - nLat1) * Math.PI / 180;
   const dLon = (nLon2 - nLon1) * Math.PI / 180;
   const a = 
@@ -52,7 +79,10 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
     Math.cos(nLat1 * Math.PI / 180) * Math.cos(nLat2 * Math.PI / 180) * 
     Math.sin(dLon/2) * Math.sin(dLon/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
+  const distance = R * c;
+  
+  // Se a distância for maior que o diâmetro da terra, algo está errado nas coordenadas
+  return distance > 20000 ? null : distance;
 };
 
 export const getCategories = async (): Promise<string[]> => {
@@ -96,7 +126,6 @@ export const getProducts = async (terms?: string[], materialIds?: number[], cate
     } else if (category && category !== 'Todos') {
       query = query.eq('category', category);
     } else if (terms && terms.length > 0) {
-      // Cria uma string de busca OR para múltiplos termos
       const orFilter = terms.map(t => `name.ilike.%${t.trim()}%`).join(',');
       query = query.or(orFilter);
     } else {
@@ -112,7 +141,7 @@ export const getProducts = async (terms?: string[], materialIds?: number[], cate
       const storeInfo = storeMap[pStoreId];
       return {
         ...p,
-        store_name: storeInfo?.name || `Loja Parceira (${pStoreId.substring(0, 4)}...)`,
+        store_name: storeInfo?.name || `Loja Parceira`,
         whatsapp: storeInfo?.whatsapp || "",
         lat: storeInfo?.lat ?? null,
         lng: storeInfo?.lng ?? null
