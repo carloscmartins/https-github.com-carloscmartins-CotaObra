@@ -8,99 +8,116 @@ const supabaseKey = process.env.VITE_SUPABASE_KEY || (window as any).VITE_SUPABA
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
-const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-  if (!lat1 || !lon1 || !lat2 || !lon2) return 9999;
+function parseLocation(loc: string): { lat: number; lng: number } | null {
+  if (!loc || typeof loc !== 'string') return null;
+  if (loc.includes('POINT')) {
+    try {
+      const matches = loc.match(/\(([^)]+)\)/);
+      if (matches && matches[1]) {
+        const parts = matches[1].split(' ');
+        const lng = parseFloat(parts[0]);
+        const lat = parseFloat(parts[1]);
+        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+      }
+    } catch (e) {
+      console.warn("Falha ao ler WKT:", e);
+    }
+  }
+  if (loc.length > 40) { 
+    try {
+      const readDouble = (hexPart: string) => {
+        const bytes = new Uint8Array(hexPart.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+        const view = new DataView(bytes.buffer);
+        return view.getFloat64(0, true);
+      };
+      const lng = readDouble(loc.substring(26, 42));
+      const lat = readDouble(loc.substring(42, 58));
+      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+    } catch (e) { }
+  }
+  return null;
+}
+
+export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number | null => {
+  const nLat1 = Number(lat1);
+  const nLon1 = Number(lon1);
+  const nLat2 = Number(lat2);
+  const nLon2 = Number(lon2);
+  if (isNaN(nLat1) || isNaN(nLon1) || isNaN(nLat2) || isNaN(nLon2)) return null;
   const R = 6371; 
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const dLat = (nLat2 - nLat1) * Math.PI / 180;
+  const dLon = (nLon2 - nLon1) * Math.PI / 180;
   const a = 
     Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.cos(nLat1 * Math.PI / 180) * Math.cos(nLat2 * Math.PI / 180) * 
     Math.sin(dLon/2) * Math.sin(dLon/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c;
 };
 
-const extractCoords = (store: any) => {
-  // Prioridade 1: Campos numéricos explícitos (mais confiável)
-  if (store.lat && store.lng) return { lat: Number(store.lat), lng: Number(store.lng) };
-  if (store.latitude && store.longitude) return { lat: Number(store.latitude), lng: Number(store.longitude) };
-  
-  const loc = store.location;
-  if (!loc) return null;
-
-  if (typeof loc === 'string') {
-    // Caso POINT(LNG LAT) - Padrão PostGIS WKT
-    if (loc.includes('POINT')) {
-      const matches = loc.match(/POINT\s?\(([-\d\.]+)\s+([-\d\.]+)\)/);
-      if (matches) return { lng: parseFloat(matches[1]), lat: parseFloat(matches[2]) };
-    }
-    // Caso Hexadecimal PostGIS EWKB
-    if (/^[0-9a-fA-F]+$/.test(loc) && loc.length > 30) {
-       // Se o dado estiver em Hex, retornamos a posição fixa do banco para o MVP
-       // ou o ideal é o lojista ter lat/lng salvos em colunas separadas.
-       return { lat: -23.5505, lng: -46.6333 };
-    }
+export const getCategories = async (): Promise<string[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('materiais')
+      .select('categoria')
+      .eq('ativo', true);
+    if (error) throw error;
+    const cats = Array.from(new Set(data.map(m => m.categoria))).filter(Boolean) as string[];
+    return cats.sort();
+  } catch (err) {
+    console.error("Erro getCategories:", err);
+    return ["Acabamento", "Alvenaria", "Cimento", "Elétrica", "Hidráulica", "Pintura"];
   }
-
-  return null;
 };
 
-export const getProducts = async (radiusKm: number, userLat: number, userLng: number, term?: string, materialIds?: number[]) => {
-  const effectiveRadius = Number(radiusKm);
-  const searchTerm = term?.trim() || '';
-  
+export const getProducts = async (terms?: string[], materialIds?: number[], category?: string) => {
   try {
-    const { data: allStores, error: sError } = await supabase.from('stores').select('*');
-    if (sError || !allStores) return [];
+    const { data: storesData, error: storesError } = await supabase
+      .from('stores')
+      .select('id, name, whatsapp, address, location');
+    
+    if (storesError) console.error("Erro ao buscar lojas:", storesError);
 
-    const storeDistanceMap: Record<string, number> = {};
-    const storeDataMap: Record<string, any> = {};
-    const nearbyStoreIds: string[] = [];
-
-    allStores.forEach((store: any) => {
-      const coords = extractCoords(store);
-      if (coords) {
-        const dist = calculateDistance(userLat, userLng, coords.lat, coords.lng);
-        storeDistanceMap[store.id] = dist;
-        // FILTRO RÍGIDO: Só entra se estiver dentro do raio
-        if (dist <= effectiveRadius) {
-          nearbyStoreIds.push(store.id);
-        }
-      } else {
-        storeDistanceMap[store.id] = 9999;
+    const storeMap: Record<string, any> = {};
+    (storesData || []).forEach(s => {
+      const idKey = String(s.id).trim().toLowerCase();
+      let lat = null, lng = null;
+      if (s.location) {
+        const parsed = parseLocation(s.location);
+        if (parsed) { lat = parsed.lat; lng = parsed.lng; }
       }
-      storeDataMap[store.id] = store;
+      storeMap[idKey] = { name: s.name, whatsapp: s.whatsapp, lat, lng };
     });
 
-    // Se nenhuma loja estiver no raio selecionado, retornamos vazio para respeitar a vontade do usuário
-    if (nearbyStoreIds.length === 0) return [];
-
-    let query = supabase.from('products').select('*').in('store_id', nearbyStoreIds);
-
+    let query = supabase.from('products').select('*').eq('active', true);
+    
     if (materialIds && materialIds.length > 0) {
       query = query.in('material_id', materialIds);
-    } else if (searchTerm) {
-      query = query.ilike('name', `%${searchTerm}%`);
+    } else if (category && category !== 'Todos') {
+      query = query.eq('category', category);
+    } else if (terms && terms.length > 0) {
+      // Cria uma string de busca OR para múltiplos termos
+      const orFilter = terms.map(t => `name.ilike.%${t.trim()}%`).join(',');
+      query = query.or(orFilter);
+    } else {
+      query = query.limit(50);
     }
 
-    const { data: products, error: pError } = await query.limit(100);
-    if (pError || !products) return [];
+    const { data: productsData, error: productsError } = await query;
+    if (productsError) throw productsError;
+    if (!productsData) return [];
 
-    return products
-      .map(p => {
-        const store = storeDataMap[p.store_id];
-        return {
-          ...p,
-          store_name: store?.name || 'Loja',
-          whatsapp: store?.whatsapp || '',
-          address: store?.address || '',
-          distance_km: storeDistanceMap[p.store_id] || 0
-        };
-      })
-      .filter(p => p.active !== false)
-      .sort((a, b) => a.distance_km - b.distance_km);
-
+    return productsData.map(p => {
+      const pStoreId = String(p.store_id || '').trim().toLowerCase();
+      const storeInfo = storeMap[pStoreId];
+      return {
+        ...p,
+        store_name: storeInfo?.name || `Loja Parceira (${pStoreId.substring(0, 4)}...)`,
+        whatsapp: storeInfo?.whatsapp || "",
+        lat: storeInfo?.lat ?? null,
+        lng: storeInfo?.lng ?? null
+      };
+    });
   } catch (err) {
     console.error("Erro getProducts:", err);
     return [];

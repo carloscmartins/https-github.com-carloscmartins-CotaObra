@@ -1,6 +1,6 @@
 {
   "name": "CotaObra MVP",
-  "description": "Marketplace de cotação de materiais de construção com cadastro inteligente via IA e comparação de preços regional.",
+  "description": "Marketplace de cotação de materiais de construção.",
   "requestFramePermissions": [
     "camera",
     "geolocation"
