@@ -11,14 +11,12 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 function parseLocation(loc: any): { lat: number; lng: number } | null {
   if (!loc) return null;
   
-  // Se já for um objeto com lat/lng (raro no retorno direto do PostGIS mas possível via RPC)
   if (typeof loc === 'object' && loc.lat && loc.lng) {
     return { lat: Number(loc.lat), lng: Number(loc.lng) };
   }
 
   const locStr = String(loc);
 
-  // Caso 1: WKT (Well-Known Text) - POINT(lng lat)
   if (locStr.includes('POINT')) {
     try {
       const matches = locStr.match(/\(([^)]+)\)/);
@@ -33,24 +31,17 @@ function parseLocation(loc: any): { lat: number; lng: number } | null {
     }
   }
 
-  // Caso 2: Hex EWKB (Extendido Well-Known Binary) comum no Supabase/PostGIS
-  // Formato: 0101000020E6100000...
   if (locStr.length >= 42) { 
     try {
-      // O PostGIS costuma enviar em Little Endian. 
-      // Coordenadas começam no offset 18 (após o header de SRID se existir) ou 10.
-      // Vamos tentar um método mais simples: extrair do final da string hex se for POINT
       const readDouble = (hexPart: string) => {
         const bytes = new Uint8Array(hexPart.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
         const view = new DataView(bytes.buffer);
         return view.getFloat64(0, true);
       };
       
-      // Para POINT (16 bytes para 2 doubles)
       const lng = readDouble(locStr.slice(-32, -16));
       const lat = readDouble(locStr.slice(-16));
       
-      // Validação básica para evitar valores astronômicos caso o offset esteja errado
       if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
         return { lat, lng };
       }
@@ -67,11 +58,9 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
   const nLon2 = Number(lon2);
   
   if (isNaN(nLat1) || isNaN(nLon1) || isNaN(nLat2) || isNaN(nLon2)) return null;
-  
-  // Filtro de sanidade: se lat/lng forem 0 ou valores de erro comuns
   if (nLat1 === 0 || nLat2 === 0) return null;
 
-  const R = 6371; // Raio da Terra em KM
+  const R = 6371; 
   const dLat = (nLat2 - nLat1) * Math.PI / 180;
   const dLon = (nLon2 - nLon1) * Math.PI / 180;
   const a = 
@@ -81,34 +70,26 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   const distance = R * c;
   
-  // Se a distância for maior que o diâmetro da terra, algo está errado nas coordenadas
-  return distance > 20000 ? null : distance;
+  return distance;
 };
 
-export const getCategories = async (): Promise<string[]> => {
-  try {
-    const { data, error } = await supabase
-      .from('materiais')
-      .select('categoria')
-      .eq('ativo', true);
-    if (error) throw error;
-    const cats = Array.from(new Set(data.map(m => m.categoria))).filter(Boolean) as string[];
-    return cats.sort();
-  } catch (err) {
-    console.error("Erro getCategories:", err);
-    return ["Acabamento", "Alvenaria", "Cimento", "Elétrica", "Hidráulica", "Pintura"];
-  }
-};
-
-export const getProducts = async (terms?: string[], materialIds?: number[], category?: string) => {
+export const getProducts = async (
+  terms?: string[], 
+  materialIds?: number[], 
+  category?: string, 
+  storeLimit: number = 3,
+  userLoc?: { lat: number, lng: number } | null
+) => {
   try {
     const { data: storesData, error: storesError } = await supabase
       .from('stores')
       .select('id, name, whatsapp, address, location');
     
-    if (storesError) console.error("Erro ao buscar lojas:", storesError);
+    if (storesError) throw storesError;
 
-    const storeMap: Record<string, any> = {};
+    const nearbyStoreIds: string[] = [];
+    const storesInfoMap: Record<string, any> = {};
+
     (storesData || []).forEach(s => {
       const idKey = String(s.id).trim().toLowerCase();
       let lat = null, lng = null;
@@ -116,10 +97,23 @@ export const getProducts = async (terms?: string[], materialIds?: number[], cate
         const parsed = parseLocation(s.location);
         if (parsed) { lat = parsed.lat; lng = parsed.lng; }
       }
-      storeMap[idKey] = { name: s.name, whatsapp: s.whatsapp, lat, lng };
+
+      let dist = null;
+      if (userLoc && lat !== null && lng !== null) {
+        dist = calculateDistance(userLoc.lat, userLoc.lng, lat, lng);
+      }
+
+      // REGRA ATUALIZADA: Apenas lojas num raio de 50km
+      if (!userLoc || (dist !== null && dist <= 50)) {
+        nearbyStoreIds.push(idKey);
+        storesInfoMap[idKey] = { ...s, dist, lat, lng };
+      }
     });
 
+    if (nearbyStoreIds.length === 0) return [];
+
     let query = supabase.from('products').select('*').eq('active', true);
+    query = query.in('store_id', nearbyStoreIds);
     
     if (materialIds && materialIds.length > 0) {
       query = query.in('material_id', materialIds);
@@ -128,25 +122,38 @@ export const getProducts = async (terms?: string[], materialIds?: number[], cate
     } else if (terms && terms.length > 0) {
       const orFilter = terms.map(t => `name.ilike.%${t.trim()}%`).join(',');
       query = query.or(orFilter);
-    } else {
-      query = query.limit(50);
     }
 
     const { data: productsData, error: productsError } = await query;
     if (productsError) throw productsError;
-    if (!productsData) return [];
 
-    return productsData.map(p => {
-      const pStoreId = String(p.store_id || '').trim().toLowerCase();
-      const storeInfo = storeMap[pStoreId];
-      return {
-        ...p,
-        store_name: storeInfo?.name || `Loja Parceira`,
-        whatsapp: storeInfo?.whatsapp || "",
-        lat: storeInfo?.lat ?? null,
-        lng: storeInfo?.lng ?? null
-      };
+    const storePresenceCount: Record<string, number> = {};
+    productsData.forEach(p => {
+      const sid = String(p.store_id).trim().toLowerCase();
+      storePresenceCount[sid] = (storePresenceCount[sid] || 0) + 1;
     });
+
+    const finalStoreIds = nearbyStoreIds
+      .filter(id => storePresenceCount[id] > 0)
+      .sort((a, b) => (storesInfoMap[a].dist || 999) - (storesInfoMap[b].dist || 999))
+      .slice(0, storeLimit);
+
+    const finalProducts = productsData
+      .filter(p => finalStoreIds.includes(String(p.store_id).trim().toLowerCase()))
+      .map(p => {
+        const sid = String(p.store_id).trim().toLowerCase();
+        const s = storesInfoMap[sid];
+        return {
+          ...p,
+          store_name: s.name,
+          whatsapp: s.whatsapp,
+          lat: s.lat,
+          lng: s.lng,
+          distance: s.dist
+        };
+      });
+
+    return finalProducts;
   } catch (err) {
     console.error("Erro getProducts:", err);
     return [];
