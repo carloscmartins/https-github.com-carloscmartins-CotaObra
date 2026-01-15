@@ -8,7 +8,7 @@ import { AIPlannerView } from './components/AIPlannerView';
 
 const App: React.FC = () => {
   const [role, setRole] = useState<UserRole | 'planner'>(() => {
-    const saved = localStorage.getItem('cotaobra_user_role');
+    const saved = localStorage.getItem('asapobra_role_v1');
     return (saved as any) || UserRole.CONSTRUCTOR;
   });
 
@@ -16,7 +16,7 @@ const App: React.FC = () => {
   const [aiSuggestions, setAiSuggestions] = useState<{materialId: number, quantity: string, rationale?: string}[]>([]);
 
   useEffect(() => {
-    localStorage.setItem('cotaobra_user_role', role);
+    localStorage.setItem('asapobra_role_v1', role);
   }, [role]);
 
   const handleAISelection = (materials: MasterMaterial[], suggestions: {materialId: number, quantity: string, rationale?: string}[]) => {
@@ -51,27 +51,29 @@ const App: React.FC = () => {
       </main>
 
       {/* Persistent Bottom Bar - Mobile Focused */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-t border-gray-100 px-6 py-4 flex justify-between items-center sm:hidden shadow-[0_-8px_30px_rgb(0,0,0,0.04)] z-[50]">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-gray-100 px-8 py-5 flex justify-between items-center sm:hidden shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-[50] rounded-t-[2.5rem]">
         <button 
           onClick={() => { setRole('planner'); }}
           className={`flex flex-col items-center transition-all ${role === 'planner' ? 'text-orange-600 scale-110' : 'text-gray-300'}`}
         >
-          <i className="fas fa-magic text-xl"></i>
-          <span className="text-[9px] font-black uppercase mt-1 tracking-tighter">Assistente</span>
+          <i className="fas fa-hard-hat text-xl"></i>
+          <span className="text-[9px] font-black uppercase mt-1.5 tracking-tighter">Planner</span>
         </button>
         <button 
           onClick={() => { handleResetSearch(); }}
           className={`flex flex-col items-center transition-all ${role === UserRole.CONSTRUCTOR ? 'text-orange-600 scale-110' : 'text-gray-300'}`}
         >
-          <i className="fas fa-search text-xl"></i>
-          <span className="text-[9px] font-black uppercase mt-1 tracking-tighter">Cotar</span>
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center -mt-8 shadow-xl transition-all ${role === UserRole.CONSTRUCTOR ? 'bg-orange-600 text-white' : 'bg-white text-gray-300'}`}>
+            <i className="fas fa-bolt text-xl"></i>
+          </div>
+          <span className="text-[9px] font-black uppercase mt-1 tracking-tighter italic text-orange-600">ASAP</span>
         </button>
         <button 
           onClick={() => setRole(UserRole.MERCHANT)}
           className={`flex flex-col items-center transition-all ${role === UserRole.MERCHANT ? 'text-orange-600 scale-110' : 'text-gray-300'}`}
         >
           <i className="fas fa-store text-xl"></i>
-          <span className="text-[9px] font-black uppercase mt-1 tracking-tighter">Loja</span>
+          <span className="text-[9px] font-black uppercase mt-1.5 tracking-tighter">Loja</span>
         </button>
       </nav>
     </div>

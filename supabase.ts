@@ -8,46 +8,49 @@ const supabaseKey = process.env.VITE_SUPABASE_KEY || (window as any).VITE_SUPABA
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
+export const MASTER_CATALOG_DATA = [
+  { id: 1, nome: "Cimento CP-II 50kg", categoria: "Cimento", unidade: "Saco", descricao: "Cimento multiuso para diversas aplicações." },
+  { id: 2, nome: "Areia Fina", categoria: "Agregados", unidade: "m³", descricao: "Areia limpa para acabamentos e reboco." },
+  { id: 3, nome: "Areia Média", categoria: "Agregados", unidade: "m³", descricao: "Areia para assentamento e concreto." },
+  { id: 4, nome: "Pedra Brita 1", categoria: "Agregados", unidade: "m³", descricao: "Brita para concreto estrutural." },
+  { id: 5, nome: "Cal Hidratada 20kg", categoria: "Cimento", unidade: "Saco", descricao: "Cal para argamassas de assentamento e revestimento." },
+  { id: 10, nome: "Vergalhão CA-50 8mm (5/16) 12m", categoria: "Aço", unidade: "Barra", descricao: "Barra de aço para reforço estrutural." },
+  { id: 11, nome: "Vergalhão CA-50 10mm (3/8) 12m", categoria: "Aço", unidade: "Barra", descricao: "Barra de aço de maior resistência." },
+  { id: 20, nome: "Bloco de Concreto 14x19x39", categoria: "Alvenaria", unidade: "Milheiro", descricao: "Bloco estrutural de concreto." },
+  { id: 21, nome: "Tijolo Baiano 8 Furos", categoria: "Alvenaria", unidade: "Milheiro", descricao: "Tijolo cerâmico para vedação." },
+  { id: 30, nome: "Tubo Esgoto 100mm 6m", categoria: "Hidráulica", unidade: "Vara", descricao: "Tubo de PVC para esgoto." },
+  { id: 40, nome: "Cabo Flexível 2,5mm² (Rolo 100m)", categoria: "Elétrica", unidade: "Rolo", descricao: "Cabo para circuitos residenciais." },
+  { id: 50, nome: "Telha Brasilit 2,44x1,10 6mm", categoria: "Cobertura", unidade: "Folha", descricao: "Telha de fibrocimento durável." },
+  { id: 60, nome: "Tinta Acrílica Branco Fosco 18L", categoria: "Acabamento", unidade: "Lata", descricao: "Tinta de alto rendimento." }
+];
+
 function parseLocation(loc: any): { lat: number; lng: number } | null {
   if (!loc) return null;
-  
-  if (typeof loc === 'object' && loc.lat && loc.lng) {
-    return { lat: Number(loc.lat), lng: Number(loc.lng) };
+  if (typeof loc === 'object' && Array.isArray(loc.coordinates)) {
+    return { lat: Number(loc.coordinates[1]), lng: Number(loc.coordinates[0]) };
   }
-
   const locStr = String(loc);
-
-  if (locStr.includes('POINT')) {
+  if (locStr.toUpperCase().includes('POINT')) {
     try {
       const matches = locStr.match(/\(([^)]+)\)/);
       if (matches && matches[1]) {
         const parts = matches[1].trim().split(/\s+/);
-        const lng = parseFloat(parts[0]);
-        const lat = parseFloat(parts[1]);
-        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+        return { lat: parseFloat(parts[1]), lng: parseFloat(parts[0]) };
       }
-    } catch (e) {
-      console.warn("Falha ao ler WKT:", e);
-    }
+    } catch (e) {}
   }
-
-  if (locStr.length >= 42) { 
+  if (locStr.length >= 42 && /^[0-9A-Fa-f]+$/.test(locStr)) {
     try {
       const readDouble = (hexPart: string) => {
         const bytes = new Uint8Array(hexPart.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
         const view = new DataView(bytes.buffer);
         return view.getFloat64(0, true);
       };
-      
       const lng = readDouble(locStr.slice(-32, -16));
       const lat = readDouble(locStr.slice(-16));
-      
-      if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
-        return { lat, lng };
-      }
-    } catch (e) { }
+      return { lat, lng };
+    } catch (e) {}
   }
-  
   return null;
 }
 
@@ -56,21 +59,15 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
   const nLon1 = Number(lon1);
   const nLat2 = Number(lat2);
   const nLon2 = Number(lon2);
-  
   if (isNaN(nLat1) || isNaN(nLon1) || isNaN(nLat2) || isNaN(nLon2)) return null;
-  if (nLat1 === 0 || nLat2 === 0) return null;
-
-  const R = 6371; 
+  const R = 6371;
   const dLat = (nLat2 - nLat1) * Math.PI / 180;
   const dLon = (nLon2 - nLon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(nLat1 * Math.PI / 180) * Math.cos(nLat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  const distance = R * c;
-  
-  return distance;
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.abs(R * c);
 };
 
 export const getProducts = async (
@@ -78,83 +75,64 @@ export const getProducts = async (
   materialIds?: number[], 
   category?: string, 
   storeLimit: number = 3,
-  userLoc?: { lat: number, lng: number } | null
+  userLoc?: { lat: number, lng: number } | null,
+  maxRadiusKm: number = 50
 ) => {
   try {
     const { data: storesData, error: storesError } = await supabase
       .from('stores')
-      .select('id, name, whatsapp, address, location');
+      .select('id, name, whatsapp, location');
     
     if (storesError) throw storesError;
 
-    const nearbyStoreIds: string[] = [];
     const storesInfoMap: Record<string, any> = {};
-
     (storesData || []).forEach(s => {
-      const idKey = String(s.id).trim().toLowerCase();
-      let lat = null, lng = null;
-      if (s.location) {
-        const parsed = parseLocation(s.location);
-        if (parsed) { lat = parsed.lat; lng = parsed.lng; }
-      }
-
+      const idKey = String(s.id).toLowerCase();
+      const parsed = parseLocation(s.location);
       let dist = null;
-      if (userLoc && lat !== null && lng !== null) {
-        dist = calculateDistance(userLoc.lat, userLoc.lng, lat, lng);
+      if (userLoc && parsed) {
+        dist = calculateDistance(userLoc.lat, userLoc.lng, parsed.lat, parsed.lng);
       }
-
-      // REGRA ATUALIZADA: Apenas lojas num raio de 50km
-      if (!userLoc || (dist !== null && dist <= 50)) {
-        nearbyStoreIds.push(idKey);
-        storesInfoMap[idKey] = { ...s, dist, lat, lng };
+      
+      // Só adiciona se estiver dentro do raio ou se não tiver localização do usuário
+      if (!userLoc || (dist !== null && dist <= maxRadiusKm)) {
+        storesInfoMap[idKey] = { ...s, dist };
       }
     });
 
-    if (nearbyStoreIds.length === 0) return [];
+    const validStoreIds = Object.keys(storesInfoMap);
+    if (validStoreIds.length === 0) return [];
 
-    let query = supabase.from('products').select('*').eq('active', true);
-    query = query.in('store_id', nearbyStoreIds);
+    let query = supabase.from('products').select('*').eq('active', true).in('store_id', validStoreIds);
     
-    if (materialIds && materialIds.length > 0) {
-      query = query.in('material_id', materialIds);
-    } else if (category && category !== 'Todos') {
-      query = query.eq('category', category);
-    } else if (terms && terms.length > 0) {
-      const orFilter = terms.map(t => `name.ilike.%${t.trim()}%`).join(',');
-      query = query.or(orFilter);
+    if (materialIds && materialIds.length > 0) query = query.in('material_id', materialIds);
+    else if (category && category !== 'Todos') query = query.eq('category', category);
+    else if (terms && terms.length > 0) {
+      const validTerms = terms.map(t => t.trim()).filter(t => t.length > 1);
+      if (validTerms.length > 0) query = query.or(validTerms.map(t => `name.ilike.%${t}%`).join(','));
     }
 
     const { data: productsData, error: productsError } = await query;
     if (productsError) throw productsError;
 
-    const storePresenceCount: Record<string, number> = {};
-    productsData.forEach(p => {
-      const sid = String(p.store_id).trim().toLowerCase();
-      storePresenceCount[sid] = (storePresenceCount[sid] || 0) + 1;
+    const nearbyProducts = (productsData || []).map(p => {
+      const sid = String(p.store_id).toLowerCase();
+      const s = storesInfoMap[sid];
+      return {
+        ...p,
+        store_name: s?.name || 'Loja Local',
+        whatsapp: s?.whatsapp || '',
+        distance: s?.dist ?? null
+      };
     });
 
-    const finalStoreIds = nearbyStoreIds
-      .filter(id => storePresenceCount[id] > 0)
-      .sort((a, b) => (storesInfoMap[a].dist || 999) - (storesInfoMap[b].dist || 999))
+    const storeIdsWithProducts = Array.from(new Set(nearbyProducts.map(p => String(p.store_id).toLowerCase())));
+    const sortedStoreIds = storeIdsWithProducts
+      .sort((a, b) => (storesInfoMap[a]?.dist ?? 9999) - (storesInfoMap[b]?.dist ?? 9999))
       .slice(0, storeLimit);
 
-    const finalProducts = productsData
-      .filter(p => finalStoreIds.includes(String(p.store_id).trim().toLowerCase()))
-      .map(p => {
-        const sid = String(p.store_id).trim().toLowerCase();
-        const s = storesInfoMap[sid];
-        return {
-          ...p,
-          store_name: s.name,
-          whatsapp: s.whatsapp,
-          lat: s.lat,
-          lng: s.lng,
-          distance: s.dist
-        };
-      });
-
-    return finalProducts;
-  } catch (err) {
+    return nearbyProducts.filter(p => sortedStoreIds.includes(String(p.store_id).toLowerCase()));
+  } catch (err: any) {
     console.error("Erro getProducts:", err);
     return [];
   }
