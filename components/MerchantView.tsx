@@ -383,8 +383,8 @@ export const MerchantView: React.FC = () => {
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
           {!selectedCategory ? (
             <div className="grid grid-cols-2 gap-4">
-              {/* Fix: Explicitly cast categories to string array to avoid 'Property map does not exist on type unknown' error */}
-              {(categories as string[]).map((cat: string) => {
+              {/* Fix: Added explicit type casting for categories as string[] and a safety check to avoid Property 'map' does not exist on type 'unknown' */}
+              {Array.isArray(categories) && (categories as string[]).map((cat: string) => {
                 const ui = CATEGORY_UI[cat] || CATEGORY_UI.default;
                 return (
                   <button key={cat} onClick={() => setSelectedCategory(cat)} className="bg-white p-8 rounded-[2.5rem] border border-gray-100 text-center hover:border-orange-400 transition-all group flex flex-col items-center gap-4">

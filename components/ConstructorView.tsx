@@ -159,6 +159,7 @@ export const ConstructorView: React.FC<ConstructorViewProps> = ({
     }
   };
 
+  // Mantém a distância das lojas atualizada se a localização mudar
   useEffect(() => {
     if (userLocation && nearbyStores.length > 0) {
       setNearbyStores(prevStores => 
@@ -238,6 +239,7 @@ export const ConstructorView: React.FC<ConstructorViewProps> = ({
         setViewMode('select_stores');
         return;
       }
+
       const processedStores = storesData.map(s => {
         const coords = parseLocation(s.location);
         let dist = null;
@@ -246,7 +248,14 @@ export const ConstructorView: React.FC<ConstructorViewProps> = ({
         }
         return { ...s, distance: dist, coords };
       });
-      const sorted = processedStores.sort((a, b) => (a.distance ?? 9999) - (b.distance ?? 9999));
+
+      // FILTRAGEM PELO RAIO DE BUSCA
+      const filteredByRadius = processedStores.filter(s => {
+        if (s.distance === null) return false;
+        return s.distance <= searchRadius;
+      });
+
+      const sorted = filteredByRadius.sort((a, b) => (a.distance ?? 9999) - (b.distance ?? 9999));
       setNearbyStores(sorted);
       setViewMode('select_stores');
     } catch (err) {
@@ -271,6 +280,7 @@ export const ConstructorView: React.FC<ConstructorViewProps> = ({
     setHasSearched(true);
     try {
       const ids = selectedMaterials.map(m => Number(m.id));
+      // Aqui o getProducts também respeita o searchRadius internamente
       const data = await getProducts(undefined, ids, undefined, 5, userLocation, searchRadius);
       setRealResults(data);
       await new Promise(r => setTimeout(r, 1000));
@@ -440,7 +450,7 @@ export const ConstructorView: React.FC<ConstructorViewProps> = ({
               <i className="fas fa-chevron-left"></i> Adicionar Mais Itens
             </button>
             <div className="text-center space-y-2">
-                <h3 className="text-slate-900 font-black uppercase text-sm italic">Lojas mais próximas</h3>
+                <h3 className="text-slate-900 font-black uppercase text-sm italic">Lojas em um raio de {searchRadius}km</h3>
                 <p className="text-gray-400 font-bold uppercase text-[9px] tracking-widest italic">Escolha até 5 para o comparativo</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -451,14 +461,16 @@ export const ConstructorView: React.FC<ConstructorViewProps> = ({
                 return (
                   <button key={store.id} disabled={isFull} onClick={() => toggleStoreSelection(sid)} className={`p-6 rounded-[3rem] border-0 transition-all relative flex flex-col items-center gap-4 shadow-sm hover:shadow-xl ${isSelected ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} ${isFull ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
                     <p className="text-[10px] font-black uppercase tracking-tight text-center leading-tight mb-2 min-h-[2.5rem] flex items-center">{store.name}</p>
-                    <div className={`${isSelected ? 'bg-orange-600 text-white' : 'bg-orange-50 text-orange-600'} px-6 py-2 rounded-full mb-2 flex items-center gap-2`}>
+                    <div className={`${isSelected ? 'bg-orange-600 text-white' : 'bg-orange-50 text-orange-600'} px-6 py-2 rounded-full mb-2 flex items-center gap-2 shadow-inner`}>
                        <span className="font-black text-xs italic">{formatDist(store.distance)}</span>
                     </div>
                   </button>
                 );
               }) : (
-                <div className="col-span-full py-20 text-center bg-white rounded-[3rem] border border-dashed border-gray-200">
-                  <p className="text-gray-400 font-black uppercase text-[10px] tracking-widest">Nenhuma loja encontrada.</p>
+                <div className="col-span-full py-20 text-center bg-white rounded-[3rem] border border-dashed border-gray-200 px-10">
+                  <i className="fas fa-satellite-dish text-gray-200 text-4xl mb-4"></i>
+                  <p className="text-gray-400 font-black uppercase text-[10px] tracking-widest leading-relaxed mb-6">Nenhuma loja encontrada em {searchRadius}KM.</p>
+                  <button onClick={() => setViewMode('catalog')} className="text-orange-600 font-black uppercase text-[10px] border-b-2 border-orange-600 pb-1">Tente aumentar o raio acima</button>
                 </div>
               )}
             </div>
