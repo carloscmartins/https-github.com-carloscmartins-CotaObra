@@ -29,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({ role, setRole }) => {
               : 'text-gray-400 hover:text-gray-600'
           }`}
         >
-          Cotar
+          Pesquisar
         </button>
         <button
           onClick={() => setRole(UserRole.MERCHANT)}

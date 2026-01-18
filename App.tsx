@@ -32,22 +32,24 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col pb-20 sm:pb-0 bg-[#F9FAFB]">
+    <div className="h-screen flex flex-col bg-[#F9FAFB] overflow-hidden">
       <Header role={role === 'planner' ? UserRole.CONSTRUCTOR : role} setRole={(r) => {
         if (r === UserRole.CONSTRUCTOR) handleResetSearch();
         else setRole(r);
       }} />
       
-      <main className="flex-1 overflow-y-auto no-scrollbar">
-        {role === 'planner' && <AIPlannerView onSelectMaterials={handleAISelection} />}
-        {role === UserRole.CONSTRUCTOR && (
-          <ConstructorView 
-            preSelected={preSelectedMaterials} 
-            aiSuggestions={aiSuggestions}
-            onOpenAIPlanner={() => { setRole('planner'); }}
-          />
-        )}
-        {role === UserRole.MERCHANT && <MerchantView />}
+      <main className="flex-1 overflow-hidden relative">
+        <div className="absolute inset-0 overflow-y-auto no-scrollbar flex flex-col">
+          {role === 'planner' && <AIPlannerView onSelectMaterials={handleAISelection} />}
+          {role === UserRole.CONSTRUCTOR && (
+            <ConstructorView 
+              preSelected={preSelectedMaterials} 
+              aiSuggestions={aiSuggestions}
+              onOpenAIPlanner={() => { setRole('planner'); }}
+            />
+          )}
+          {role === UserRole.MERCHANT && <MerchantView />}
+        </div>
       </main>
 
       {/* Persistent Bottom Bar - Mobile Focused */}

@@ -3,6 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 // O process.env.API_KEY é injetado pelo ambiente de execução.
 const apiKey = process.env.API_KEY || '';
+// Correct initialization with named parameter
 const ai = new GoogleGenAI({ apiKey });
 
 export const identifyProductFromImage = async (base64Image: string) => {
@@ -36,7 +37,8 @@ export const identifyProductFromImage = async (base64Image: string) => {
     },
   });
 
-  return JSON.parse(response.text);
+  // Access .text property directly (not a method)
+  return JSON.parse(response.text || '{}');
 };
 
 export const generateProductImage = async (productName: string, category: string): Promise<string> => {
@@ -49,8 +51,10 @@ export const generateProductImage = async (productName: string, category: string
       config: { imageConfig: { aspectRatio: "1:1" } }
     });
 
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+    if (response.candidates?.[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+      }
     }
     return '';
   } catch (error) {
